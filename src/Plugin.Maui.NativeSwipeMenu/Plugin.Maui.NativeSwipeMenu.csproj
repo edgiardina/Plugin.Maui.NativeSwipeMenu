@@ -43,7 +43,8 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
+		<!-- Lowest supported version, so apps on any MAUI 10 patch can consume the package -->
+		<PackageReference Include="Microsoft.Maui.Controls" Version="10.0.0" />
 	</ItemGroup>
 
 	<ItemGroup>

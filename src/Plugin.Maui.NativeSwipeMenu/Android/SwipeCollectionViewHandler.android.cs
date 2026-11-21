@@ -178,7 +178,10 @@ public partial class SwipeCollectionViewHandler : CollectionViewHandler
 			using var text = new APaint(PaintFlags.AntiAlias)
 			{
 				Color = AColor.White,
-				TextSize = 14 * (itemView.Resources?.DisplayMetrics?.ScaledDensity ?? density),
+				// ApplyDimension honors the user's font scale (ScaledDensity is obsolete on API 34+)
+				TextSize = itemView.Resources?.DisplayMetrics is { } metrics
+					? Android.Util.TypedValue.ApplyDimension(Android.Util.ComplexUnitType.Sp, 14, metrics)
+					: 14 * density,
 				TextAlign = swipingLeft ? APaint.Align.Right! : APaint.Align.Left!,
 			};
 			text.SetTypeface(Typeface.DefaultBold);
