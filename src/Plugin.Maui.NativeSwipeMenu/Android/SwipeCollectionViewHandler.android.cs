@@ -29,7 +29,10 @@ public partial class SwipeCollectionViewHandler : CollectionViewHandler
 
 	ItemTouchHelper? _touchHelper;
 
-	SwipeCollectionView? SwipeView => VirtualView as SwipeCollectionView;
+	// The typed VirtualView/PlatformView getters throw once they're null (after the page is popped),
+	// so anything that can run late, like the delayed restore below, goes through these.
+	SwipeCollectionView? SwipeView => ((IElementHandler)this).VirtualView as SwipeCollectionView;
+	RecyclerView? CurrentPlatformView => ((IElementHandler)this).PlatformView as RecyclerView;
 
 	ILogger? Logger => MauiContext?.Services.GetService<ILogger<SwipeCollectionViewHandler>>();
 
@@ -62,7 +65,7 @@ public partial class SwipeCollectionViewHandler : CollectionViewHandler
 		if (SwipeView is not { } view)
 			return null;
 
-		var rtl = PlatformView.LayoutDirection == Android.Views.LayoutDirection.Rtl;
+		var rtl = CurrentPlatformView?.LayoutDirection == Android.Views.LayoutDirection.Rtl;
 		var trailing = (direction == ItemTouchHelper.Left) != rtl;
 		return view.GetAvailableActions(item, trailing).FirstOrDefault();
 	}
@@ -85,12 +88,12 @@ public partial class SwipeCollectionViewHandler : CollectionViewHandler
 		}
 
 		var delay = action.Style == SwipeActionStyle.Destructive ? DestructiveRestoreDelayMs : 0;
-		PlatformView.PostDelayed(() => RestoreIfStillPresent(item), delay);
+		CurrentPlatformView?.PostDelayed(() => RestoreIfStillPresent(item), delay);
 	}
 
 	void RestoreIfStillPresent(object? item)
 	{
-		if (item is null || SwipeView is not { ItemsSource: { } source } view || PlatformView?.GetAdapter() is not { } adapter)
+		if (item is null || SwipeView is not { ItemsSource: { } source } view || CurrentPlatformView?.GetAdapter() is not { } adapter)
 			return;
 
 		var index = IndexOf(source, item);
