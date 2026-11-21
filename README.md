@@ -1,5 +1,7 @@
 # Plugin.Maui.NativeSwipeMenu
 
+[![NuGet](https://img.shields.io/nuget/v/Plugin.Maui.NativeSwipeMenu.svg?label=NuGet)](https://www.nuget.org/packages/Plugin.Maui.NativeSwipeMenu/)
+
 `SwipeCollectionView` is a .NET MAUI `CollectionView` with platform-native swipe actions.
 
 - **iOS and Mac Catalyst**: The plugin uses `UIContextualAction` on a `UICollectionView` list layout. You get the system swipe physics, full-swipe to perform, haptics, and system styling. This is the same control that Mail uses.
