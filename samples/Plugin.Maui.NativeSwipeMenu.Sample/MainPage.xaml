@@ -20,6 +20,7 @@
             <swipe:SwipeCollectionView.LeadingActions>
                 <swipe:SwipeAction Text="Unread"
                                    SystemImage="envelope.badge.fill"
+                                   IconImageSource="swipe_unread.png"
                                    BackgroundColor="#0A84FF"
                                    Command="{Binding ToggleUnreadCommand}" />
             </swipe:SwipeCollectionView.LeadingActions>
@@ -27,9 +28,11 @@
                 <swipe:SwipeAction Text="Delete"
                                    Style="Destructive"
                                    SystemImage="trash.fill"
+                                   IconImageSource="swipe_delete.png"
                                    Command="{Binding DeleteCommand}" />
                 <swipe:SwipeAction Text="Flag"
                                    SystemImage="flag.fill"
+                                   IconImageSource="swipe_flag.png"
                                    BackgroundColor="#FF9F0A"
                                    Command="{Binding FlagCommand}" />
             </swipe:SwipeCollectionView.TrailingActions>
