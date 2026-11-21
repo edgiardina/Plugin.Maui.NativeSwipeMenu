@@ -47,6 +47,12 @@ public partial class SwipeCollectionViewHandler : ViewHandler<SwipeCollectionVie
 
 	ILogger? Logger => MauiContext?.Services.GetService<ILogger<SwipeCollectionViewHandler>>();
 
+	// The typed VirtualView/PlatformView getters throw once they're null, and MAUI clears PlatformView
+	// *before* it calls DisconnectHandler. Anything that can run during or after disconnect (the
+	// disconnect itself, deferred reloads, UIKit callbacks) has to go through these instead.
+	SwipeCollectionView? CurrentView => ((IElementHandler)this).VirtualView as SwipeCollectionView;
+	UICollectionView? CurrentPlatformView => ((IElementHandler)this).PlatformView as UICollectionView;
+
 	protected override UICollectionView CreatePlatformView()
 	{
 		var collectionView = new UICollectionView(CoreGraphics.CGRect.Empty, CreateLayout())
@@ -70,7 +76,7 @@ public partial class SwipeCollectionViewHandler : ViewHandler<SwipeCollectionVie
 		if (_observedSource is not null)
 			_observedSource.CollectionChanged -= OnItemsSourceCollectionChanged;
 		_observedSource = null;
-		ClearEmptyView();
+		ClearEmptyView(platformView);
 		base.DisconnectHandler(platformView);
 	}
 
@@ -96,7 +102,7 @@ public partial class SwipeCollectionViewHandler : ViewHandler<SwipeCollectionVie
 
 		var config = new UICollectionLayoutListConfiguration(UICollectionLayoutListAppearance.Plain)
 		{
-			ShowsSeparators = VirtualView?.ShowsSeparators ?? true,
+			ShowsSeparators = CurrentView?.ShowsSeparators ?? true,
 			BackgroundColor = UIColor.Clear,
 			TrailingSwipeActionsConfigurationProvider = indexPath =>
 				weakHandler.TryGetTarget(out var handler) ? handler.BuildSwipeConfiguration(indexPath, trailing: true) : null!,
@@ -109,7 +115,7 @@ public partial class SwipeCollectionViewHandler : ViewHandler<SwipeCollectionVie
 
 	UISwipeActionsConfiguration? BuildSwipeConfiguration(NSIndexPath indexPath, bool trailing)
 	{
-		if (VirtualView is not { } view || indexPath.Row < 0 || indexPath.Row >= _items.Count)
+		if (CurrentView is not { } view || indexPath.Row < 0 || indexPath.Row >= _items.Count)
 			return null;
 
 		var item = _items[indexPath.Row];
@@ -167,10 +173,10 @@ public partial class SwipeCollectionViewHandler : ViewHandler<SwipeCollectionVie
 
 	void PreloadActionImages()
 	{
-		if (VirtualView is null)
+		if (CurrentView is not { } view)
 			return;
 
-		foreach (var action in VirtualView.LeadingActions.Concat(VirtualView.TrailingActions))
+		foreach (var action in view.LeadingActions.Concat(view.TrailingActions))
 			if (action.IconImageSource is not null && action.PlatformImage is null)
 				_ = LoadActionImageAsync(action);
 	}
@@ -211,11 +217,15 @@ public partial class SwipeCollectionViewHandler : ViewHandler<SwipeCollectionVie
 
 	void ReloadAll()
 	{
+		// Can arrive via BeginInvokeOnMainThread after the page has been popped.
+		if (CurrentPlatformView is not { } collectionView)
+			return;
+
 		_items.Clear();
-		if (VirtualView?.ItemsSource is { } source)
+		if (CurrentView?.ItemsSource is { } source)
 			_items.AddRange(source.Cast<object>());
 
-		PlatformView.ReloadData();
+		collectionView.ReloadData();
 		UpdateEmptyView();
 		SyncNativeSelection();
 	}
@@ -229,8 +239,11 @@ public partial class SwipeCollectionViewHandler : ViewHandler<SwipeCollectionVie
 			return;
 		}
 
+		if (CurrentPlatformView is not { } collectionView)
+			return;
+
 		// Batch updates on a collection view that isn't on screen can throw consistency errors.
-		if (PlatformView.Window is null || !TryApplyIncrementalChange(e))
+		if (collectionView.Window is null || !TryApplyIncrementalChange(e))
 		{
 			ReloadAll();
 			return;
@@ -298,24 +311,28 @@ public partial class SwipeCollectionViewHandler : ViewHandler<SwipeCollectionVie
 
 	internal UICollectionViewCell GetCell(UICollectionView collectionView, NSIndexPath indexPath)
 	{
-		var item = _items[indexPath.Row];
-		var template = VirtualView.ItemTemplate is DataTemplateSelector selector
-			? selector.SelectTemplate(item, VirtualView)
-			: VirtualView.ItemTemplate;
+		// UIKit can still ask for cells while the page is being torn down.
+		if (CurrentView is not { } view || MauiContext is null || indexPath.Row >= _items.Count)
+			return (UICollectionViewCell)collectionView.DequeueReusableCell(TextCellReuseId, indexPath);
 
-		var reuseId = template is null ? TextCellReuseId : ReuseIdFor(template);
+		var item = _items[indexPath.Row];
+		var template = view.ItemTemplate is DataTemplateSelector selector
+			? selector.SelectTemplate(item, view)
+			: view.ItemTemplate;
+
+		var reuseId = template is null ? TextCellReuseId : ReuseIdFor(collectionView, template);
 		var cell = (SwipeListCell)collectionView.DequeueReusableCell(reuseId, indexPath);
-		cell.Bind(item, template, VirtualView, MauiContext!);
+		cell.Bind(item, template, view, MauiContext);
 		return cell;
 	}
 
-	string ReuseIdFor(DataTemplate template)
+	string ReuseIdFor(UICollectionView collectionView, DataTemplate template)
 	{
 		if (!_reuseIds.TryGetValue(template, out var reuseId))
 		{
 			reuseId = $"NativeSwipeMenu.TemplateCell.{_reuseIds.Count}";
 			_reuseIds[template] = reuseId;
-			PlatformView.RegisterClassForCell(typeof(SwipeListCell), reuseId);
+			collectionView.RegisterClassForCell(typeof(SwipeListCell), reuseId);
 		}
 
 		return reuseId;
@@ -340,23 +357,24 @@ public partial class SwipeCollectionViewHandler : ViewHandler<SwipeCollectionVie
 
 	void SyncNativeSelection()
 	{
-		if (_updatingSelection || VirtualView is not { } view || view.SelectionMode != SelectionMode.Single)
+		if (_updatingSelection || CurrentView is not { } view || CurrentPlatformView is not { } collectionView
+			|| view.SelectionMode != SelectionMode.Single)
 			return;
 
-		var selected = PlatformView.GetIndexPathsForSelectedItems() ?? [];
+		var selected = collectionView.GetIndexPathsForSelectedItems() ?? [];
 		var target = view.SelectedItem is null ? -1 : _items.IndexOf(view.SelectedItem);
 
 		foreach (var path in selected)
 			if (path.Row != target)
-				PlatformView.DeselectItem(path, true);
+				collectionView.DeselectItem(path, true);
 
 		if (target >= 0 && !selected.Any(p => p.Row == target))
-			PlatformView.SelectItem(NSIndexPath.FromItemSection(target, 0), false, UICollectionViewScrollPosition.None);
+			collectionView.SelectItem(NSIndexPath.FromItemSection(target, 0), false, UICollectionViewScrollPosition.None);
 	}
 
 	internal void OnItemSelected(NSIndexPath indexPath, bool selected)
 	{
-		if (VirtualView is not { } view || indexPath.Row >= _items.Count)
+		if (CurrentView is not { } view || indexPath.Row >= _items.Count)
 			return;
 
 		var item = _items[indexPath.Row];
@@ -383,17 +401,17 @@ public partial class SwipeCollectionViewHandler : ViewHandler<SwipeCollectionVie
 
 	static void MapEmptyView(SwipeCollectionViewHandler handler, SwipeCollectionView view)
 	{
-		handler.ClearEmptyView();
+		handler.ClearEmptyView(handler.CurrentPlatformView);
 		handler.UpdateEmptyView();
 	}
 
 	void UpdateEmptyView()
 	{
-		if (VirtualView is not { } view)
+		if (CurrentView is not { } view || CurrentPlatformView is not { } collectionView)
 			return;
 
 		var showEmpty = _items.Count == 0 && (view.EmptyView is not null || view.EmptyViewTemplate is not null);
-		PlatformView.BackgroundView = showEmpty ? _emptyPlatformView ??= CreateEmptyView(view) : null;
+		collectionView.BackgroundView = showEmpty ? _emptyPlatformView ??= CreateEmptyView(view) : null;
 	}
 
 	UIView CreateEmptyView(SwipeCollectionView view)
@@ -430,16 +448,18 @@ public partial class SwipeCollectionViewHandler : ViewHandler<SwipeCollectionVie
 		return new MauiViewContainer(mauiView, MauiContext!);
 	}
 
-	void ClearEmptyView()
+	// Takes the platform view explicitly: during DisconnectHandler the handler's own PlatformView
+	// is already null (and its getter throws), so the caller passes the one it was handed.
+	void ClearEmptyView(UICollectionView? platformView)
 	{
-		if (_emptyMauiView is not null && ReferenceEquals(_emptyMauiView.Parent, VirtualView))
-			VirtualView.RemoveLogicalChild(_emptyMauiView);
+		if (_emptyMauiView is not null && CurrentView is { } view && ReferenceEquals(_emptyMauiView.Parent, view))
+			view.RemoveLogicalChild(_emptyMauiView);
 
 		_emptyMauiView = null;
 		_emptyPlatformView?.RemoveFromSuperview();
 		_emptyPlatformView = null;
-		if (PlatformView is not null)
-			PlatformView.BackgroundView = null;
+		if (platformView is not null)
+			platformView.BackgroundView = null;
 	}
 
 	sealed class SwipeListDataSource(SwipeCollectionViewHandler handler) : UICollectionViewDataSource
