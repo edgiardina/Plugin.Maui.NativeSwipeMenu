@@ -1,0 +1,26 @@
+name: Build for CI
+
+on:
+  push:
+    branches: [ "main" ]
+    paths-ignore:
+      - "**.md"
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-plugin-ci:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install .NET 10 SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Install MAUI workloads
+      run: dotnet workload install maui maui-android maui-ios maui-maccatalyst
+
+    - name: Build
+      run: dotnet build src\Plugin.Maui.NativeSwipeMenu\Plugin.Maui.NativeSwipeMenu.csproj -c Release

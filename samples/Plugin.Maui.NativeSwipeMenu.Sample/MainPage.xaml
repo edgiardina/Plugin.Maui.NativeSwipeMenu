@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:swipe="clr-namespace:Plugin.Maui.NativeSwipeMenu;assembly=Plugin.Maui.NativeSwipeMenu"
+             xmlns:local="clr-namespace:NativeSwipeMenuSample"
+             x:Class="NativeSwipeMenuSample.MainPage"
+             x:DataType="local:MainViewModel"
+             Title="Inbox">
+    <Grid RowDefinitions="Auto,*">
+        <Label Text="{Binding Status}"
+               Padding="16,8"
+               FontSize="13"
+               TextColor="{AppThemeBinding Light=#666, Dark=#AAA}" />
+
+        <swipe:SwipeCollectionView Grid.Row="1"
+                                   ItemsSource="{Binding Messages}"
+                                   SelectionMode="Single"
+                                   SelectionChangedCommand="{Binding OpenCommand}"
+                                   SelectionChangedCommandParameter="{Binding SelectedItem, Source={RelativeSource Self}, x:DataType=CollectionView}">
+            <swipe:SwipeCollectionView.LeadingActions>
+                <swipe:SwipeAction Text="Unread"
+                                   SystemImage="envelope.badge.fill"
+                                   BackgroundColor="#0A84FF"
+                                   Command="{Binding ToggleUnreadCommand}" />
+            </swipe:SwipeCollectionView.LeadingActions>
+            <swipe:SwipeCollectionView.TrailingActions>
+                <swipe:SwipeAction Text="Delete"
+                                   Style="Destructive"
+                                   SystemImage="trash.fill"
+                                   Command="{Binding DeleteCommand}" />
+                <swipe:SwipeAction Text="Flag"
+                                   SystemImage="flag.fill"
+                                   BackgroundColor="#FF9F0A"
+                                   Command="{Binding FlagCommand}" />
+            </swipe:SwipeCollectionView.TrailingActions>
+
+            <swipe:SwipeCollectionView.ItemTemplate>
+                <DataTemplate x:DataType="local:Message">
+                    <Grid Padding="20,10" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                        <Label Text="{Binding From}" FontAttributes="Bold" FontSize="17" />
+                        <Label Grid.Column="1" Text="{Binding Flag}" FontSize="15" />
+                        <Label Grid.Row="1" Grid.ColumnSpan="2"
+                               Text="{Binding Subject}"
+                               FontSize="15"
+                               MaxLines="2"
+                               TextColor="{AppThemeBinding Light=#666, Dark=#AAA}" />
+                    </Grid>
+                </DataTemplate>
+            </swipe:SwipeCollectionView.ItemTemplate>
+
+            <swipe:SwipeCollectionView.EmptyView>
+                <Label Text="No messages" HorizontalOptions="Center" VerticalOptions="Center" FontSize="20" />
+            </swipe:SwipeCollectionView.EmptyView>
+        </swipe:SwipeCollectionView>
+    </Grid>
+</ContentPage>
